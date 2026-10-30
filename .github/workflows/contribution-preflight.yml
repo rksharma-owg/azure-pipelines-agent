@@ -1,0 +1,82 @@
+name: Agent contribution preflight
+on:
+  push:
+    branches: [ci/preflight-20261030]
+permissions:
+  contents: read
+jobs:
+  validate:
+    name: ${{ matrix.label || 'patch' }} / ${{ matrix.rid }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {os: windows-2022, rid: win-x64, unit: true, functional: true}
+          - {os: windows-2022, rid: win-x86, unit: true, functional: true}
+          - {os: windows-2022, rid: win-arm64, unit: false, functional: false}
+          - {os: ubuntu-24.04, rid: linux-x64, unit: true, functional: true}
+          - {os: ubuntu-24.04-arm, rid: linux-arm64, unit: true, functional: true}
+          - {os: ubuntu-24.04, rid: linux-arm, unit: false, functional: false}
+          - {os: ubuntu-24.04, rid: linux-musl-x64, unit: true, functional: false}
+          - {os: ubuntu-24.04-arm, rid: linux-musl-arm64, unit: true, functional: false}
+          - {os: macos-15-intel, rid: osx-x64, unit: true, functional: true}
+          - {os: macos-15, rid: osx-arm64, unit: true, functional: true}
+          - {os: ubuntu-24.04, rid: linux-x64, unit: true, functional: true, label: baseline, sha: 2d408e314fdb7aed11ad36871d5c08b8c52c38b9}
+    env:
+      TEST_SHA: ${{ matrix.sha || '1f93c9447e52e7f6ad5da9301e2a350302b5e12a' }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ env.TEST_SHA }}
+          persist-credentials: false
+      - name: Verify exact contribution commit
+        shell: bash
+        run: |
+          test "$(git rev-parse HEAD)" = "$TEST_SHA"
+          git log -1 --format='%H %s'
+      - name: Build and layout Release on Unix
+        id: unix
+        if: runner.os != 'Windows'
+        working-directory: src
+        shell: bash
+        run: ./dev.sh layout net10.0 Release '${{ matrix.rid }}'
+      - name: Build and layout Release on Windows
+        id: windows
+        if: runner.os == 'Windows'
+        working-directory: src
+        shell: cmd
+        run: dev.cmd layout net10.0 Release ${{ matrix.rid }}
+      - name: Check layout symlinks
+        if: ${{ !cancelled() && (steps.unix.outcome == 'success' || steps.windows.outcome == 'success') }}
+        shell: bash
+        run: bash src/Misc/check-symlinks.sh
+      - name: Unix L0 unit tests and coverage
+        if: ${{ !cancelled() && runner.os != 'Windows' && matrix.unit && steps.unix.outcome == 'success' }}
+        working-directory: src
+        shell: bash
+        run: ./dev.sh testl0 net10.0 Debug '${{ matrix.rid }}'
+      - name: Windows L0 unit tests and coverage
+        if: ${{ !cancelled() && runner.os == 'Windows' && matrix.unit && steps.windows.outcome == 'success' }}
+        working-directory: src
+        shell: cmd
+        run: dev.cmd testl0 net10.0 Debug ${{ matrix.rid }}
+      - name: Unix L1 functional tests
+        if: ${{ !cancelled() && runner.os != 'Windows' && matrix.functional && steps.unix.outcome == 'success' }}
+        working-directory: src
+        shell: bash
+        run: ./dev.sh testl1 net10.0 Debug '${{ matrix.rid }}'
+      - name: Windows L1 functional tests
+        if: ${{ !cancelled() && runner.os == 'Windows' && matrix.functional && steps.windows.outcome == 'success' }}
+        working-directory: src
+        shell: cmd
+        run: dev.cmd testl1 net10.0 Debug ${{ matrix.rid }}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: results-${{ matrix.label || 'patch' }}-${{ matrix.rid }}
+          path: |
+            src/Test/TestResults
+            _l1/TestResults
+          if-no-files-found: warn
