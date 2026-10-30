@@ -64,7 +64,7 @@ jobs:
       - uses: github/codeql-action/analyze@793b778da9c9275a0f276522b27cb5fc14bba279
         with:
           output: sarif-results
-          upload: false
+          upload: never
           category: /language:csharp
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
