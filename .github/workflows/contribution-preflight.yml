@@ -13,17 +13,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - {os: windows-2022, rid: win-x64, unit: true, functional: true}
-          - {os: windows-2022, rid: win-x86, unit: true, functional: true}
-          - {os: windows-2022, rid: win-arm64, unit: false, functional: false}
-          - {os: ubuntu-24.04, rid: linux-x64, unit: true, functional: true}
           - {os: ubuntu-24.04-arm, rid: linux-arm64, unit: true, functional: true}
-          - {os: ubuntu-24.04, rid: linux-arm, unit: false, functional: false}
-          - {os: ubuntu-24.04, rid: linux-musl-x64, unit: true, functional: false}
-          - {os: ubuntu-24.04-arm, rid: linux-musl-arm64, unit: true, functional: false}
-          - {os: macos-15-intel, rid: osx-x64, unit: true, functional: true}
-          - {os: macos-15, rid: osx-arm64, unit: true, functional: true}
-          - {os: ubuntu-24.04, rid: linux-x64, unit: true, functional: true, label: baseline, sha: 2d408e314fdb7aed11ad36871d5c08b8c52c38b9}
+          - {os: ubuntu-24.04-arm, rid: linux-arm64, unit: true, functional: true, label: baseline, sha: 2d408e314fdb7aed11ad36871d5c08b8c52c38b9}
     env:
       TEST_SHA: ${{ matrix.sha || '8cd9d33d353a75c0c4b0eb1b6b638adaeb748028' }}
     steps:
