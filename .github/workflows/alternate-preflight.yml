@@ -1,0 +1,77 @@
+name: Alternate agent package build preflight
+on:
+  push:
+    branches: [ci/alternate-preflight-20261030]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {os: ubuntu-24.04, targets: 'linux-x64 linux-arm linux-arm64'}
+          - {os: windows-2022, targets: 'win-x64 win-x86 win-arm64'}
+          - {os: macos-15, targets: 'osx-x64 osx-arm64'}
+    env:
+      TEST_SHA: 8cd9d33d353a75c0c4b0eb1b6b638adaeb748028
+      PACKAGE_TYPE: pipelines-agent
+      RID_LIST: ${{ matrix.targets }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ env.TEST_SHA }}
+          persist-credentials: false
+      - name: Verify tested SHA and variant
+        shell: bash
+        run: |
+          test "$(git rev-parse HEAD)" = "$TEST_SHA"
+          test "$PACKAGE_TYPE" = pipelines-agent
+          git log -1 --format='%H %s'
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.13'
+      - name: Restore public SDK framework packs from their public source
+        shell: bash
+        run: |
+          python - <<'PYTHON'
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+          configs = ['src/NuGet.Config', 'src/Test/NuGet.Config',
+                     'src/Agent.Worker/NuGet.Config', 'src/Agent.Listener/NuGet.Config',
+                     'src/Microsoft.VisualStudio.Services.Agent/NuGet.Config']
+          for filename in configs:
+              tree = ET.parse(filename)
+              root = tree.getroot()
+              ET.SubElement(root.find('packageSources'), 'add', {
+                  'key': 'dotnet-framework-packs', 'value': 'https://api.nuget.org/v3/index.json'})
+              mapping = ET.SubElement(root, 'packageSourceMapping')
+              original = ET.SubElement(mapping, 'packageSource', {'key': 'restsdk'})
+              ET.SubElement(original, 'package', {'pattern': '*'})
+              public = ET.SubElement(mapping, 'packageSource', {'key': 'dotnet-framework-packs'})
+              for prefix in ['Microsoft.NETCore.App.*', 'Microsoft.AspNetCore.App.*']:
+                  ET.SubElement(public, 'package', {'pattern': prefix})
+              tree.write(filename, encoding='utf-8', xml_declaration=True)
+          print('Framework package versions are unchanged; non-framework packages retain the upstream feed.')
+          PYTHON
+      - name: Build each alternate package target on Unix
+        if: runner.os != 'Windows'
+        working-directory: src
+        shell: bash
+        run: |
+          for target_rid in $RID_LIST; do
+            ./dev.sh layout net10.0 Release "$target_rid"
+            printf 'ALTERNATE_TARGET_PASSED=%s\n' "$target_rid"
+          done
+      - name: Build each alternate package target on Windows
+        if: runner.os == 'Windows'
+        working-directory: src
+        shell: cmd
+        run: |
+          for %%r in (%RID_LIST%) do (
+            call dev.cmd layout net10.0 Release %%r
+            if errorlevel 1 exit /b 1
+            echo ALTERNATE_TARGET_PASSED=%%r
+          )
