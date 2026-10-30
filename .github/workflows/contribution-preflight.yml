@@ -25,7 +25,7 @@ jobs:
           - {os: macos-15, rid: osx-arm64, unit: true, functional: true}
           - {os: ubuntu-24.04, rid: linux-x64, unit: true, functional: true, label: baseline, sha: 2d408e314fdb7aed11ad36871d5c08b8c52c38b9}
     env:
-      TEST_SHA: ${{ matrix.sha || '1f93c9447e52e7f6ad5da9301e2a350302b5e12a' }}
+      TEST_SHA: ${{ matrix.sha || '8cd9d33d353a75c0c4b0eb1b6b638adaeb748028' }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -36,6 +36,32 @@ jobs:
         run: |
           test "$(git rev-parse HEAD)" = "$TEST_SHA"
           git log -1 --format='%H %s'
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.13'
+      - name: Restore public SDK framework packs from their public source
+        shell: bash
+        run: |
+          python - <<'PYTHON'
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+          configs = ['src/NuGet.Config', 'src/Test/NuGet.Config',
+                     'src/Agent.Worker/NuGet.Config', 'src/Agent.Listener/NuGet.Config',
+                     'src/Microsoft.VisualStudio.Services.Agent/NuGet.Config']
+          for filename in configs:
+              tree = ET.parse(filename)
+              root = tree.getroot()
+              ET.SubElement(root.find('packageSources'), 'add', {
+                  'key': 'dotnet-framework-packs', 'value': 'https://api.nuget.org/v3/index.json'})
+              mapping = ET.SubElement(root, 'packageSourceMapping')
+              original = ET.SubElement(mapping, 'packageSource', {'key': 'restsdk'})
+              ET.SubElement(original, 'package', {'pattern': '*'})
+              public = ET.SubElement(mapping, 'packageSource', {'key': 'dotnet-framework-packs'})
+              for prefix in ['Microsoft.NETCore.App.*', 'Microsoft.AspNetCore.App.*']:
+                  ET.SubElement(public, 'package', {'pattern': prefix})
+              tree.write(filename, encoding='utf-8', xml_declaration=True)
+          print('Framework package versions are unchanged; non-framework packages retain the upstream feed.')
+          PYTHON
       - name: Build and layout Release on Unix
         id: unix
         if: runner.os != 'Windows'
